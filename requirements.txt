@@ -1,0 +1,5 @@
+PyQt5>=5.15.9
+mss>=7.0.1
+Pillow>=10.0.0
+anthropic>=0.28.0
+winsdk>=1.0.0b10

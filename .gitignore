@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+
+# Config cá nhân (chứa API key)
+.screentranslate.json
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code internal
+.claude/
