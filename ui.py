@@ -195,9 +195,11 @@ class SelectionOverlay(QWidget):
 
 class OneShotWorker(QThread):
     """Thực hiện một lần: chụp → OCR → dịch."""
-    result = pyqtSignal(str, str)
-    error  = pyqtSignal(str)
-    status = pyqtSignal(str)
+    result     = pyqtSignal(str, str)
+    error      = pyqtSignal(str)
+    status     = pyqtSignal(str)
+    hide_main  = pyqtSignal()
+    show_main  = pyqtSignal()
 
     def __init__(self, region, src: str, tgt: str, api_key: str):
         super().__init__()
@@ -208,8 +210,12 @@ class OneShotWorker(QThread):
 
     def run(self):
         try:
+            self.hide_main.emit()
+            self.msleep(250)  # chờ window ẩn hoàn toàn khỏi màn hình
+
             self.status.emit("Đang chụp màn hình…")
             img = capture.capture_region(self.region)
+            self.show_main.emit()
 
             self.status.emit("Đang nhận dạng văn bản (OCR)…")
             text = ocr_engine.recognize(img, self.src)
@@ -224,15 +230,18 @@ class OneShotWorker(QThread):
             self.result.emit(text.strip(), translation)
             self.status.emit("Hoàn thành")
         except Exception as exc:
+            self.show_main.emit()
             self.error.emit(str(exc))
             self.status.emit("Lỗi — xem bên dưới")
 
 
 class AutoWorker(QThread):
     """Tự động lặp: chụp → OCR → dịch → chờ → lặp lại."""
-    result = pyqtSignal(str, str)
-    error  = pyqtSignal(str)
-    status = pyqtSignal(str)
+    result    = pyqtSignal(str, str)
+    error     = pyqtSignal(str)
+    status    = pyqtSignal(str)
+    hide_main = pyqtSignal()
+    show_main = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -252,8 +261,12 @@ class AutoWorker(QThread):
         while not self._stop:
             if self.region:
                 try:
+                    self.hide_main.emit()
+                    self.msleep(250)  # chờ window ẩn hoàn toàn khỏi màn hình
+
                     self.status.emit("Đang chụp màn hình…")
                     img = capture.capture_region(self.region)
+                    self.show_main.emit()
 
                     self.status.emit("Đang OCR…")
                     text = ocr_engine.recognize(img, self.src)
@@ -269,6 +282,7 @@ class AutoWorker(QThread):
 
                     self.status.emit("Sẵn sàng — đang theo dõi…")
                 except Exception as exc:
+                    self.show_main.emit()
                     self.error.emit(str(exc))
                     self.status.emit("Lỗi — xem bên dưới")
 
@@ -442,10 +456,18 @@ class MainWindow(QMainWindow):
     # ── Chọn vùng ────────────────────────────────────────────────────────
 
     def _pick_region(self):
-        overlay = SelectionOverlay()
-        overlay.region_selected.connect(self._on_region_selected)
+        self.hide()
+        # Delay nhỏ để đảm bảo window đã biến mất trước khi overlay hiện
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(150, self._show_selection_overlay)
+
+    def _show_selection_overlay(self):
+        self._overlay = SelectionOverlay()
+        self._overlay.region_selected.connect(self._on_region_selected)
+        self._overlay.cancelled.connect(self.show)
 
     def _on_region_selected(self, region: tuple):
+        self.show()
         self._region = region
         x, y, w, h = region
         self.w_region_lbl.setText(f"{w} × {h}  tại  ({x}, {y})")
@@ -475,6 +497,8 @@ class MainWindow(QMainWindow):
             )
         )
         self._oneshot_worker.status.connect(self.w_status.showMessage)
+        self._oneshot_worker.hide_main.connect(self.hide)
+        self._oneshot_worker.show_main.connect(self.show)
         self._oneshot_worker.finished.connect(
             lambda: self.w_once.setEnabled(True)
         )
@@ -506,6 +530,8 @@ class MainWindow(QMainWindow):
             lambda e: self.w_status.showMessage(f"Lỗi: {e[:100]}")
         )
         self._auto_worker.status.connect(self.w_status.showMessage)
+        self._auto_worker.hide_main.connect(self.hide)
+        self._auto_worker.show_main.connect(self.show)
         self._auto_worker.start()
 
         self.w_auto.setText("⏹  Dừng lại")
